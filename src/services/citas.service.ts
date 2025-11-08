@@ -1,66 +1,105 @@
-import pool from '../db/pool';
+import { QueryResultRow } from 'pg';
+import database, { QueryParams } from '../db/database';
+import { Cita, CreateCitaDTO } from '../models/cita.model';
 
-export type Canal = 'API' | 'SMS' | 'WEB';
+export type { CreateCitaDTO };
+export type Canal = CreateCitaDTO['canal'];
 
-export interface CreateCitaDTO {
-  id_paciente: number;
-  id_medico: number;
-  fecha: string;
-  hora: string;
-  canal: Canal;
-  estado?: string;
+type Entity = 'cita';
+
+interface EntityConfig {
+  table: string;
+  idColumn: string;
+  orderBy?: string;
+  insertableColumns: string[];
 }
 
-export interface Cita extends Required<CreateCitaDTO> {
-  id_cita: number;
-  created_at: string;
-  updated_at: string;
-}
-
-export const createCita = async (data: CreateCitaDTO): Promise<Cita> => {
-  const {
-    id_paciente,
-    id_medico,
-    fecha,
-    hora,
-    canal,
-    estado = 'PENDIENTE',
-  } = data;
-
-  const query = `
-    INSERT INTO citas (id_paciente, id_medico, fecha, hora, canal, estado)
-    VALUES ($1, $2, $3, $4, $5, $6)
-    RETURNING *
-  `;
-
-  const values = [id_paciente, id_medico, fecha, hora, canal, estado];
-  const result = await pool.query<Cita>(query, values);
-
-  return result.rows[0];
+const ENTITY_CONFIG: Record<Entity, EntityConfig> = {
+  cita: {
+    table: 'citas',
+    idColumn: 'id_cita',
+    orderBy: 'ORDER BY fecha ASC, hora ASC',
+    insertableColumns: [
+      'id_paciente',
+      'id_medico',
+      'fecha',
+      'hora',
+      'canal',
+      'estado',
+    ],
+  },
 };
 
-export const getCitas = async (): Promise<Cita[]> => {
-  const query = `
-    SELECT *
-    FROM citas
-    ORDER BY fecha ASC, hora ASC
-  `;
-
-  const result = await pool.query<Cita>(query);
+/**
+ * findAll('cita') → devuelve todas las filas de la tabla citas con orden definido.
+ */
+export const findAll = async <T extends QueryResultRow>(
+  entity: Entity,
+): Promise<T[]> => {
+  const { table, orderBy } = ENTITY_CONFIG[entity];
+  const query = `SELECT * FROM ${table} ${orderBy ?? ''}`.trim();
+  const result = await database.query<T>(query);
   return result.rows;
 };
 
-export const getCitaById = async (id: number): Promise<Cita | null> => {
-  const query = `
-    SELECT *
-    FROM citas
-    WHERE id_cita = $1
-  `;
+/**
+ * findById('cita', id) → busca la fila por su columna primaria.
+ */
+export const findById = async <T extends QueryResultRow>(
+  entity: Entity,
+  id: number,
+): Promise<T | null> => {
+  const { table, idColumn } = ENTITY_CONFIG[entity];
+  const query = `SELECT * FROM ${table} WHERE ${idColumn} = $1`;
+  const result = await database.query<T>(query, [id]);
+  return result.rowCount ? result.rows[0] : null;
+};
 
-  const result = await pool.query<Cita>(query, [id]);
-  if (result.rowCount === 0) {
-    return null;
+/**
+ * insert('cita', data) → arma dinámicamente el INSERT de acuerdo al payload recibido.
+ */
+export const insert = async <T extends QueryResultRow>(
+  entity: Entity,
+  data: Record<string, unknown>,
+): Promise<T> => {
+  const { table, insertableColumns } = ENTITY_CONFIG[entity];
+
+  const columns: string[] = [];
+  const values: QueryParams = [];
+
+  insertableColumns.forEach((column) => {
+    if (data[column] !== undefined) {
+      columns.push(column);
+      values.push(
+        data[column] as string | number | boolean | null | Date,
+      );
+    }
+  });
+
+  if (columns.length === 0) {
+    throw new Error('No hay campos válidos para insertar');
   }
 
+  const placeholders = columns.map((_, index) => `$${index + 1}`).join(', ');
+  const query = `
+    INSERT INTO ${table} (${columns.join(', ')})
+    VALUES (${placeholders})
+    RETURNING *
+  `;
+
+  const result = await database.query<T>(query, values);
   return result.rows[0];
+};
+
+export const createCita = async (data: CreateCitaDTO): Promise<Cita> => {
+  const payload = { ...data, estado: data.estado ?? 'PENDIENTE' };
+  return insert<Cita>('cita', payload);
+};
+
+export const getCitas = async (): Promise<Cita[]> => {
+  return findAll<Cita>('cita');
+};
+
+export const getCitaById = async (id: number): Promise<Cita | null> => {
+  return findById<Cita>('cita', id);
 };

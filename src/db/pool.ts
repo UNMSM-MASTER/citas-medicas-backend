@@ -11,12 +11,17 @@ const poolConfig: PoolConfig = {
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
   database: process.env.DB_NAME,
+  max: 10,
 };
 
 const pool = new Pool(poolConfig);
 
+console.info(
+  `[DB] Pool configurado hacia ${poolConfig.host}:${poolConfig.port}/${poolConfig.database}`,
+);
+
 pool.on('error', (err) => {
-  console.error('Error inesperado en el pool de PostgreSQL', err);
+  console.error('[DB] Error inesperado en el pool de PostgreSQL', err);
 });
 
 export default pool;
