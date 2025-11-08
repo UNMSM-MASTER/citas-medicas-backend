@@ -3,11 +3,13 @@ import express from 'express';
 import citasRouter from './routes/citas.routes';
 import database from './db/database';
 import errorMiddleware from './middlewares/error.middleware';
+import cors from 'cors';
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 
 app.use(express.json());
+app.use(cors());
 
 app.get('/api/health', async (_req, res, next) => {
   try {
